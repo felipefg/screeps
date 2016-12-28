@@ -13,7 +13,7 @@ class CreepState {
     }
 
     static onDie(creep) {
-        console.log("Creep ${creep.name} is dying and is currently ${creep.memory.state.");
+        console.log(`Creep ${creep.name} is dying and is currently ${creep.memory.state}`);
     }
 
     static nextState(creep) {
@@ -85,24 +85,45 @@ class CreepStateReturning extends CreepState {
 
     static nextState(creep) {
 
-        /*
         if (creep.memory.target_id === null) {
             creep.memory.nextState = "parking";
             return;
         }
-        */
 
-        if (creep.carry.energy == 0) {
+        if (creep.carry.energy < creep.carryCapacity) {
             creep.memory.nextState = "gathering";
         }
     }
 
 }
 
+class CreepStateParking extends CreepState {
+
+    static action(creep) {
+        creep.moveTo(44, 9);
+    }
+
+    static nextState(creep) {
+
+        var targets = creep.room.find(FIND_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType == STRUCTURE_EXTENSION ||
+                            structure.structureType == STRUCTURE_SPAWN ||
+                            structure.structureType == STRUCTURE_TOWER)
+                            && structure.energy < structure.energyCapacity);
+                }
+        });
+
+        if (targets.length > 0) {
+            creep.memory.nextState = "returning";
+        }
+    }
+}
 
 var states = {
     gathering: CreepStateGathering,
-    returning: CreepStateReturning
+    returning: CreepStateReturning,
+    parking: CreepStateParking
 }
 
 
@@ -136,6 +157,10 @@ module.exports = {
         // If we are transitioning state, execute the onExit event.
         if (creep.memory.nextState != currState) {
             states[currState].onExit(creep);
+        }
+
+        if (creep.ticksToLive <= 1) {
+            states[currState].onDie(creep);
         }
 
     }
