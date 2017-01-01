@@ -269,15 +269,15 @@ class GatheringState extends MoveWorkState {
 
     static nextState(creep) {
         if (creep.carry.energy >= creep.carryCapacity) {
-            creep.memory.nextState = "returning";
+            setWorkStateOrIdle(creep);
         }
     }
 
 }
 
-class CreepStateParking extends CreepState {
+class IdleState extends MoveWorkState {
 
-    static onEnter(creep) {
+    static getTargets(creep) {
         // "Flee" to somewhere that is at least range=2 away from any
         // structures in the near 11x11 squares.
 
@@ -291,66 +291,60 @@ class CreepStateParking extends CreepState {
         ranges[LOOK_SOURCES] = 3;
         ranges[LOOK_STRUCTURES] = 2;
 
-        var objectives = [];
+        var targets = [];
         // Keep track of resources
         creep.room.lookAtArea(
                 pos_top, pos_left, pos_bottom, pos_right, true
         ).forEach(obj => {
             if (_.has(ranges, obj.type)) {
-                objectives.push({
+                targets.push({
                     pos: new RoomPosition(obj.x, obj.y, creep.room.name),
-                    range: ranges[obj.type]
+                    range: ranges[obj.type],
+                    target: {id: null}
                 });
             }
         });
 
-
-        var pathresult = PathFinder.search(creep.pos, objectives, {flee: true});
-
-        // Work around a bug on Room.serializePath()...
-        var serialized = JSON.parse(JSON.stringify(pathresult.path));
-        creep.memory.move_path = serialized;
+        return targets;
     }
 
-    static action(creep) {
+    static getPathFinderOpts(creep) {
+        return {flee: true};
+    }
 
-        var path = _.map(creep.memory.move_path, x => new RoomPosition(x.x, x.y, x.roomName));
-
-        var result = creep.moveByPath(path);
-
-        if (result != 0) {
-            console.log("cant move: " + result);
-            console.log(JSON.stringify(path));
-        } else {
-            creep.say('idle!');
-        }
+    static work(creep, target) {
+        creep.say("Idle!");
     }
 
     static nextState(creep) {
-
-        var targets = creep.room.find(FIND_STRUCTURES, {
-                filter: (structure) => {
-                    return ((structure.structureType == STRUCTURE_EXTENSION ||
-                            structure.structureType == STRUCTURE_SPAWN ||
-                            structure.structureType == STRUCTURE_CONTAINER ||
-                            structure.structureType == STRUCTURE_TOWER)
-                            && structure.energy < structure.energyCapacity);
-                }
-        });
-
-        if (targets.length > 0) {
-            creep.memory.nextState = "returning";
-        }
+        setWorkStateOrIdle(creep);
     }
+
 }
 
 var states = {
     gathering: GatheringState,
     returning: ReturningState,
-    parking: CreepStateParking,
+    idle: IdleState,
 }
 
+function setWorkStateOrIdle(creep) {
 
+    let roleState = {
+        harvester: {
+            name: "returning",
+            state: ReturningState
+        }
+    }
+
+    let workState = roleState[creep.memory.role];
+
+    if (workState.state.getTargets(creep).length > 0) {
+        creep.memory.nextState = workState.name;
+    } else {
+        creep.memory.nextState = "idle";
+    }
+}
 
 module.exports = {
 
