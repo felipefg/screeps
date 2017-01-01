@@ -26,145 +26,231 @@ class CreepState {
 }
 
 /**
- * Base class for "moving_*" states.
+ * Base state for when you have to move to a place and then execute an action.
  *
- * This class can also be used for generic move states.
+ * The basic algorithm is:
+ * - Compute targets and best path
+ * - Move along the path
+ * - Perform action
  */
-class StateMovingPath extends CreepState {
+class MoveWorkState extends CreepState {
 
     /**
-     * Properly sets up the creep for entering the "moving" state.
+     * Get a list of valid objectives for the current state.
+     *
+     * The return format should be an array of objects containing:
+     * - pos: The RoomPosition
+     * - target: The target structure
+     * - range: The range we need to have.
      */
-    static setupTransitionWithObjectives(
-        creep,
-        objectives,
-        pathfinderOpts,
-        stateMoving,
-        stateArrival)
-    {
-        // Save the state structure
-        var movingState = {
-            objectives: JSON.parse(JSON.stringify(objectives)),
-            pathfinderOpts: pathfinderOpts,
-            mode: "path",
-            stateArrival: stateArrival,
-            move: 0
-        };
-
-        creep.memory.nextState = stateMoving;
-        creep.memory.moving = movingState;
-
-        // Generate the path structure
-        this.calculatePath(creep);
-        this.doMove(creep);
+    static getTargets(creep) {
+        return [];
     }
 
     /**
-     * Recover the objectives array from the memory
+     * Get an object with pathfinder options, if needed.
      */
-    static getObjectives(creep) {
-        var objectives = creep.memory.moving.objectives.map(obj => {
-                return {
-                    pos: new RoomPosition(obj.pos.x, obj.pos.y,
-                                          obj.pos.roomName),
-                    range: obj.range
-                };
-            }
+    static getPathFinderOpts(creep) {
+        return {};
+    }
+
+    /**
+     * Figure out the best path to go.
+     */
+    static setTargetAndPath(creep) {
+
+        let targets = this.getTargets(creep);
+
+        // If we have no targets, just don't move anywhere.
+        if (targets.length == 0) {
+            creep.memory.move_path = [];
+            creep.memory.target_id = null;
+            return null;
+        }
+
+        let objectives = targets.map(
+            target => {return {pos:target.pos, range: target.range};}
         );
 
-        return objectives;
-    }
-
-    static calculatePath(creep) {
-
-        var results = pathTools.findPath(
+        // Find the optimal path that will take us to at least one of our
+        // targets
+        let results = pathTools.findPath(
             creep.pos,
-            this.getObjectives(creep),
-            creep.memory.moving.pathfinderOpts
+            objectives,
+            this.getPathFinderOpts(creep)
         );
 
         if (results.incomplete) {
             console.log("Found incomplete path for " + creep.name + "!!!");
         }
 
-        // Serialize path into memory
-        creep.memory.moving.path = JSON.parse(JSON.stringify(results.path));
+        // Find out the objectives that are in range of the final path location
+        let lastPos = creep.pos;
+
+        if (results.path.length > 0) {
+            lastPos = results.path[results.path.length - 1];
+        }
+
+        let inRange = targets.filter(
+            target => lastPos.inRangeTo(target.pos, target.range)
+        );
+
+        // Pick the first one (just because)
+        let nearest = inRange[0];
+
+        // Serialize data into memory
+        creep.memory.move_path = JSON.parse(JSON.stringify(results.path));
+        creep.memory.target_id = nearest.target.id;
+
+        return nearest.target;
     }
 
     /**
-     * Recover the path from memory.
-     *
-     * Doing this way because SerializePath seems to be broken.
+     * Perform the movement.
      */
-    static getPath(creep) {
-        return _.map(
-            creep.memory.moving.path,
+    static move(creep) {
+        let path = creep.memory.move_path.map(
             x => new RoomPosition(x.x, x.y, x.roomName)
         );
-    }
 
-    static doMove(creep) {
-        var path = this.getPath(creep);
-        var moveRet = creep.moveByPath(path);
+        let moveRet = 0;
 
-        creep.memory.moving.move = moveRet;
+        if (path.length > 0) {
+            moveRet = creep.moveByPath(path);
+
+            // Let's ignore moveRet tired.
+            if (moveRet == ERR_TIRED) {
+                creep.say("tired...");
+                moveRet = 0;
+            }
+
+        } else {
+            console.log(`${creep.name}: Empty path when trying to move.`);
+        }
+
+        creep.memory.move_status = moveRet;
+
+        if (moveRet != 0) {
+            console.log(`${creep.name}: moveByPath() returned ${moveRet}`);
+        }
 
         return moveRet;
     }
 
+    /**
+     * Check if target is still valid.
+     *
+     * This may be used to recompute the path as soon as possible.
+     */
+    static isTargetValid(creep) {
+        return true;
+    }
+
+    /**
+     * Perform the actual work, once in range of the target.
+     */
+    static work(creep, target) {
+        return;
+    }
+
+    // State machine implementation
     static onEnter(creep) {
-        if (!creep.memory.moving.path) {
-            this.calculatePath(creep);
-        }
+        this.setTargetAndPath(creep);
     }
 
     static action(creep) {
-        if (creep.memory.moving.movieRet != 0) {
-            this.calculatePath(creep);
+        if (creep.memory.move_path === undefined) {
+            console.log(`${creep.name}: Error: move_path is undefined.`);
+            return;
         }
+        if (creep.memory.move_path.length > 0) {
+            // we still have to move. First lets check if our target is still
+            // valid. Otherwise, let's pick up another one.
+            if (!this.isTargetValid(creep)) {
+                this.setTargetAndPath(creep);
+            }
 
-        this.doMove(creep);
-    }
+            let moveRet = this.move(creep);
 
-    static nextState(creep) {
-        var path = creep.memory.moving.path;
-
-        if (path.length == 0) {
-            // Ok, we have arrived!
-            creep.memory.nextState = creep.memory.moving.stateArrival;
+            if (moveRet != 0) {
+                console.log(
+                    `${creep.name}: Move failed. Recomputing and trying again.`
+                );
+                this.setTargetAndPath(creep);
+                this.move(creep);
+            }
+        } else {
+            // We are at the target location. Let's perform the work.
+            let target = Game.getObjectById(creep.memory.target_id);
+            this.work(creep, target);
         }
-    }
-
-    static onExit(creep) {
-        delete creep.memory.moving;
     }
 }
 
-class CreepStateGathering extends CreepState {
+class ReturningState extends MoveWorkState {
 
-    static setupTransition(creep) {
+    static getTargets(creep) {
 
-        var resource = resourceManager.energy.findEnergy(creep);
+        var targets = creep.room.find(FIND_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType == STRUCTURE_EXTENSION ||
+                            structure.structureType == STRUCTURE_SPAWN ||
+                            structure.structureType == STRUCTURE_TOWER)
+                            && structure.energy < structure.energyCapacity);
+                }
+        });
 
-        if (resource.type == "source") {
-            resourceManager.source.allocateSource(creep, resource.resource.id);
-        }
-
-        console.log("Resource: " + JSON.stringify(resource));
-
-        StateMovingPath.setupTransitionWithObjectives(
-            creep,
-            [{pos: resource.pos, range: 1}],
-            {},
-            "moving",
-            "gathering"
-        );
+        return targets.map(t => {return {pos: t.pos, range: 1, target: t};});
     }
 
-    static action(creep) {
-        var source = Game.getObjectById(creep.memory.sourceId);
+    /**
+     * Perform the actual work, once in range of the target.
+     */
+    static work(creep, target) {
+        var result = creep.transfer(target, RESOURCE_ENERGY);
 
-        var harvest = creep.harvest(source);
+        if (result != 0) {
+            console.log(creep.name + ": error " + result
+                + " on transfer().");
+        }
+    }
+
+    static nextState(creep) {
+
+        if (creep.memory.target_id == null) {
+            creep.memory.nextState = "parking";
+        } else if (creep.carry.energy < creep.carryCapacity) {
+            creep.memory.nextState = "gathering";
+        }
+
+    }
+
+}
+
+class GatheringState extends MoveWorkState {
+
+    static getTargets(creep) {
+        var sources = resourceManager.source.findSources(creep);
+
+        let targets = sources.map(t => {
+            let struct = Game.getObjectById(t.id);
+            return {pos: struct.pos, range: 1, target: struct};
+        });
+
+        return targets;
+    }
+
+    static setTargetAndPath(creep) {
+        var target = super.setTargetAndPath(creep);
+
+        if ((target !== null) && (target.type == "source")) {
+            resourceManager.source.allocateSource(creep, resource.resource.id);
+        }
+    }
+
+    static work(creep, target) {
+
+        var harvest = creep.harvest(target);
 
         if (harvest != 0) {
             console.log(`${creep.name}: Error harvesting: ${harvest}`);
@@ -172,72 +258,18 @@ class CreepStateGathering extends CreepState {
     }
 
     static onExit(creep) {
+        super.onExit(creep);
         resourceManager.source.deallocateSource(creep);
     }
 
     static onDie(creep) {
+        super.onDie(creep);
         resourceManager.source.deallocateSource(creep);
     }
 
     static nextState(creep) {
-
         if (creep.carry.energy >= creep.carryCapacity) {
             creep.memory.nextState = "returning";
-        }
-    }
-
-}
-
-class CreepStateReturning extends CreepState {
-
-    static onEnter(creep) {
-        // Find a source to gather and let's stick to it.
-        var targets = creep.room.find(FIND_STRUCTURES, {
-                filter: (structure) => {
-                    return ((structure.structureType == STRUCTURE_EXTENSION ||
-                            structure.structureType == STRUCTURE_SPAWN ||
-                            structure.structureType == STRUCTURE_CONTAINER ||
-                            structure.structureType == STRUCTURE_TOWER)
-                            && structure.energy < structure.energyCapacity);
-                }
-        });
-
-        if (targets.length > 0) {
-            creep.memory.target_id = targets[0].id;
-        } else {
-            creep.memory.target_id = null;
-        }
-
-    }
-
-
-    static action(creep) {
-
-        if (creep.memory.target_id === null) {
-            return;
-        }
-
-        var target = Game.getObjectById(creep.memory.target_id);
-
-        var result = creep.transfer(target, RESOURCE_ENERGY);
-        if (result == ERR_NOT_IN_RANGE) {
-            creep.moveTo(target);
-        } else if (result != 0) {
-            console.log(creep.name + ": error " + result
-                + " on transfer().");
-        }
-    }
-
-
-    static nextState(creep) {
-
-        if (creep.memory.target_id === null) {
-            creep.memory.nextState = "parking";
-            return;
-        }
-
-        if (creep.carry.energy < creep.carryCapacity) {
-            CreepStateGathering.setupTransition(creep);
         }
     }
 
@@ -313,10 +345,9 @@ class CreepStateParking extends CreepState {
 }
 
 var states = {
-    gathering: CreepStateGathering,
-    returning: CreepStateReturning,
+    gathering: GatheringState,
+    returning: ReturningState,
     parking: CreepStateParking,
-    moving: StateMovingPath
 }
 
 
@@ -324,6 +355,10 @@ var states = {
 module.exports = {
 
     run: function run(creep) {
+
+        if (creep.spawning) {
+            return;
+        }
 
         var currState = creep.memory.state;
 
