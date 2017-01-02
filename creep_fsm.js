@@ -417,10 +417,45 @@ class UpgradingState extends MoveWorkState {
     }
 }
 
+class BuildingState extends MoveWorkState {
+
+    static getTargets(creep) {
+        var targets = creep.room.find(FIND_CONSTRUCTION_SITES);
+        return targets.map(t => {return {pos: t.pos, range: 3, target: t};});
+    }
+
+    static work(creep, target) {
+        var result = creep.build(target);
+
+        if (result == ERR_NOT_ENOUGH_RESOURCES) {
+            // Ignore this error.
+            result = 0;
+        }
+
+        if (result == ERR_INVALID_TARGET) {
+            // This construction site has probably already finished.
+            this.setTargetAndPath(creep);
+            result = 0;
+        }
+
+        if (result != 0) {
+            console.log(creep.name + ": error " + result
+                + " on build().");
+        }
+    }
+
+    static nextState(creep) {
+        if (creep.carry.energy == 0) {
+            creep.memory.nextState = "gathering";
+        }
+    }
+}
+
 var states = {
     gathering: GatheringState,
     returning: ReturningState,
     upgrading: UpgradingState,
+    building: BuildingState,
     idle: IdleState,
     parking: IdleState,
 }
@@ -435,6 +470,10 @@ function setWorkStateOrIdle(creep) {
         upgrader: {
             name: "upgrading",
             state: UpgradingState
+        },
+        builder: {
+            name: "building",
+            state: BuildingState
         }
     }
 

@@ -1,5 +1,3 @@
-var roleHarvester = require('role.harvester');
-var roleBuilder = require('role.builder');
 var creepFSM = require("creep_fsm");
 
 function constructions_pct(room) {
@@ -44,30 +42,41 @@ module.exports.loop = function () {
     var builders = _.filter(Game.creeps, (creep) => creep.memory.role == 'builder');
     var upgraders = _.filter(Game.creeps, (creep) => creep.memory.role == 'upgrader');
 
-    if(harvesters.length < 1) {
+
+    if(builders.length < 5) {
+        var newName = Game.spawns['Spawn1'].createCreep(
+            [WORK, CARRY, MOVE],
+            undefined,
+            {creepClass: "worker", role: 'builder', nextState: "gathering"}
+        );
+        if (newName != -6) {
+            console.log('Spawning new builder: ' + newName);
+        }
+    }
+
+    if(upgraders.length < 2) {
+        var newName = Game.spawns['Spawn1'].createCreep(
+            [WORK, CARRY, MOVE],
+            undefined,
+            {creepClass: "worker", role: 'upgrader', nextState: "gathering"}
+        );
+        if (newName != -6) {
+            console.log('Spawning new upgrader: ' + newName);
+        }
+    }
+
+    if(harvesters.length < 10) {
         var newName = Game.spawns['Spawn1'].createCreep(
             [WORK,CARRY,MOVE],
             undefined,
             {creepClass: "worker", role: 'harvester', nextState: "gathering"}
         );
-        console.log('Spawning new harvester: ' + newName);
+        if (newName != -6) {
+            console.log('Spawning new harvester: ' + newName);
+        }
     }
 
-    if(builders.length < 0) {
-        var newName = Game.spawns['Spawn1'].createCreep([WORK,CARRY,MOVE], undefined, {role: 'builder', nextState: "gathering"});
-        console.log('Spawning new builder: ' + newName);
-    }
-
-    if(upgraders.length < 5) {
-        var newName = Game.spawns['Spawn1'].createCreep(
-            [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-            undefined,
-            {creepClass: "worker", role: 'upgrader', nextState: "gathering"}
-        );
-        console.log('Spawning new upgrader: ' + newName);
-    }
-
-    var tower = Game.getObjectById('TOWER_ID');
+    var tower = Game.getObjectById('580693a6df23426');
     if(tower) {
         var closestDamagedStructure = tower.pos.findClosestByRange(FIND_STRUCTURES, {
             filter: (structure) => structure.hits < structure.hitsMax
@@ -86,9 +95,6 @@ module.exports.loop = function () {
         var creep = Game.creeps[name];
         if(creep.memory.creepClass == 'worker') {
             creepFSM.run(creep);
-        }
-        if(creep.memory.role == 'builder') {
-            roleBuilder.run(creep);
         }
     }
 }
