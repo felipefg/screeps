@@ -74,7 +74,7 @@ var sourceManager = {
             source.workers.splice(creepIdx, 1);
         } else {
             console.log("Creep " + creep.name +
-                        " has broken reference to source " + source_id);
+                        " has broken reference to source " + sourceId);
         }
         delete creep.memory.sourceId;
         delete creep.memory.sourceType;
