@@ -91,18 +91,18 @@ class MoveWorkState extends CreepState {
             lastPos = results.path[results.path.length - 1];
         }
 
-        let inRange = targets.filter(
-            target => lastPos.inRangeTo(target.pos, target.range)
-        );
-
-        // Pick the first one (just because)
-        let nearest = inRange[0];
+        let nearest = lastPos.findClosestByRange(targets.map(t => t.target));
 
         // Serialize data into memory
         creep.memory.move_path = JSON.parse(JSON.stringify(results.path));
-        creep.memory.target_id = nearest.target.id;
 
-        return nearest.target;
+        if (nearest) {
+            creep.memory.target_id = nearest.id;
+        } else {
+            creep.memory.target_id = null;
+        }
+
+        return nearest;
     }
 
     /**
@@ -137,6 +137,25 @@ class MoveWorkState extends CreepState {
         return moveRet;
     }
 
+    static hasArrived(creep) {
+
+        let path = creep.memory.move_path;
+        if (path && (path.length == 0)) {
+            return true;
+        }
+
+        let lastPos = path[path.length - 1];
+
+        if ((creep.pos.x == lastPos.x) &&
+            (creep.pos.y == lastPos.y) &&
+            (creep.pos.roomName == lastPos.roomName))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     /**
      * Check if target is still valid.
      *
@@ -163,7 +182,7 @@ class MoveWorkState extends CreepState {
             console.log(`${creep.name}: Error: move_path is undefined.`);
             return;
         }
-        if (creep.memory.move_path.length > 0) {
+        if (!this.hasArrived(creep)) {
             // we still have to move. First lets check if our target is still
             // valid. Otherwise, let's pick up another one.
             if (!this.isTargetValid(creep)) {
@@ -209,6 +228,16 @@ class ReturningState extends MoveWorkState {
     static work(creep, target) {
         var result = creep.transfer(target, RESOURCE_ENERGY);
 
+        if (result == ERR_FULL) {
+            // Target is full, let's pick another one.
+            this.setTargetAndPath(creep);
+            result = 0;
+        }
+
+        if (result == ERR_NOT_ENOUGH_RESOURCES) {
+            // Ignore this error.
+            result = 0;
+        }
         if (result != 0) {
             console.log(creep.name + ": error " + result
                 + " on transfer().");
@@ -218,7 +247,7 @@ class ReturningState extends MoveWorkState {
     static nextState(creep) {
 
         if (creep.memory.target_id == null) {
-            creep.memory.nextState = "parking";
+            creep.memory.nextState = "idle";
         } else if (creep.carry.energy < creep.carryCapacity) {
             creep.memory.nextState = "gathering";
         }
@@ -230,7 +259,14 @@ class ReturningState extends MoveWorkState {
 class GatheringState extends MoveWorkState {
 
     static getTargets(creep) {
-        var sources = resourceManager.source.findSources(creep);
+
+        var sources;
+
+        if (creep.memory.sourceId) {
+            sources = [{id: creep.memory.sourceId}];
+        } else {
+            sources = resourceManager.source.findSources(creep);
+        }
 
         let targets = sources.map(t => {
             let struct = Game.getObjectById(t.id);
@@ -242,11 +278,10 @@ class GatheringState extends MoveWorkState {
 
     static setTargetAndPath(creep) {
 
-        let oldTargetId = creep.memory.target_id;
-
         var target = super.setTargetAndPath(creep);
 
-        if ((target !== null) && (target.id != oldTargetId)) {
+        if ((target !== null) && (target.id != creep.memory.sourceId)) {
+
             resourceManager.source.deallocateSource(creep);
 
             if (target instanceof Source) {
@@ -257,10 +292,22 @@ class GatheringState extends MoveWorkState {
 
     static work(creep, target) {
 
+        if (target === null) {
+            return;
+        }
+
         var harvest = creep.harvest(target);
 
+        if (harvest == ERR_NOT_IN_RANGE) {
+            // We still have to move. Let's compute path and hope for better
+            // luck next tick.
+            this.setTargetAndPath(creep);
+            // Ignore this error.
+            harvest = 0;
+        }
         if (harvest != 0) {
             console.log(`${creep.name}: Error harvesting: ${harvest}`);
+            console.log(JSON.stringify(target));
         }
     }
 
@@ -275,6 +322,13 @@ class GatheringState extends MoveWorkState {
     }
 
     static nextState(creep) {
+
+        if (creep.memory.target_id === null) {
+            // We are, in fact, in idle wait state. Let's try to recompute
+            // the state.
+            this.setTargetAndPath(creep);
+        }
+
         if (creep.carry.energy >= creep.carryCapacity) {
             setWorkStateOrIdle(creep);
         }
@@ -320,7 +374,8 @@ class IdleState extends MoveWorkState {
     }
 
     static work(creep, target) {
-        creep.say("Idle!");
+        //creep.say("Idle!");
+        return;
     }
 
     static nextState(creep) {
@@ -344,6 +399,11 @@ class UpgradingState extends MoveWorkState {
     static work(creep, target) {
         var result = creep.upgradeController(target);
 
+        if (result == ERR_NOT_ENOUGH_RESOURCES) {
+            // Ignore this error.
+            result = 0;
+        }
+
         if (result != 0) {
             console.log(creep.name + ": error " + result
                 + " on upgradeController().");
@@ -362,6 +422,7 @@ var states = {
     returning: ReturningState,
     upgrading: UpgradingState,
     idle: IdleState,
+    parking: IdleState,
 }
 
 function setWorkStateOrIdle(creep) {
@@ -404,7 +465,7 @@ module.exports = {
 
         // If we are transitioning state, execute the onEnter event.
         if (nextState != currState) {
-            console.log(`${creep.name}: changing from ${currState} to ${nextState}`);
+            //console.log(`${creep.name}: changing from ${currState} to ${nextState}`);
             creep.memory.state = nextState;
             states[nextState].onEnter(creep);
 
