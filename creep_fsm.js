@@ -241,10 +241,17 @@ class GatheringState extends MoveWorkState {
     }
 
     static setTargetAndPath(creep) {
+
+        let oldTargetId = creep.memory.target_id;
+
         var target = super.setTargetAndPath(creep);
 
-        if ((target !== null) && (target.type == "source")) {
-            resourceManager.source.allocateSource(creep, resource.resource.id);
+        if ((target !== null) && (target.id != oldTargetId)) {
+            resourceManager.source.deallocateSource(creep);
+
+            if (target instanceof Source) {
+                resourceManager.source.allocateSource(creep, target.id);
+            }
         }
     }
 
@@ -322,9 +329,38 @@ class IdleState extends MoveWorkState {
 
 }
 
+class UpgradingState extends MoveWorkState {
+
+    static getTargets(creep) {
+        return [
+            {
+                pos: creep.room.controller.pos,
+                range: 3,
+                target: creep.room.controller
+            }
+        ];
+    }
+
+    static work(creep, target) {
+        var result = creep.upgradeController(target);
+
+        if (result != 0) {
+            console.log(creep.name + ": error " + result
+                + " on upgradeController().");
+        }
+    }
+
+    static nextState(creep) {
+        if (creep.carry.energy == 0) {
+            creep.memory.nextState = "gathering";
+        }
+    }
+}
+
 var states = {
     gathering: GatheringState,
     returning: ReturningState,
+    upgrading: UpgradingState,
     idle: IdleState,
 }
 
@@ -334,6 +370,10 @@ function setWorkStateOrIdle(creep) {
         harvester: {
             name: "returning",
             state: ReturningState
+        },
+        upgrader: {
+            name: "upgrading",
+            state: UpgradingState
         }
     }
 
