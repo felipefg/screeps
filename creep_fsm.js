@@ -256,6 +256,14 @@ class ReturningState extends MoveWorkState {
             result = 0;
         }
 
+        if (result == ERR_NOT_IN_RANGE) {
+            // We still have to move. Let's compute path and hope for better
+            // luck next tick.
+            this.setTargetAndPath(creep);
+            // Ignore this error.
+            result = 0;
+        }
+
         if (result == ERR_NOT_ENOUGH_RESOURCES) {
             // Ignore this error.
             result = 0;
@@ -426,6 +434,14 @@ class UpgradingState extends MoveWorkState {
             result = 0;
         }
 
+        if (result == ERR_NOT_IN_RANGE) {
+            // We still have to move. Let's compute path and hope for better
+            // luck next tick.
+            this.setTargetAndPath(creep);
+            // Ignore this error.
+            result = 0;
+        }
+
         if (result != 0) {
             console.log(creep.name + ": error " + result
                 + " on upgradeController().");
@@ -451,6 +467,13 @@ class BuildingState extends MoveWorkState {
 
         if (result == ERR_NOT_ENOUGH_RESOURCES) {
             // Ignore this error.
+            result = 0;
+        }
+
+        if (result == ERR_NOT_IN_RANGE) {
+            // We still have to move. Let's compute path and hope for better
+            // luck next tick.
+            this.setTargetAndPath(creep);
             result = 0;
         }
 
