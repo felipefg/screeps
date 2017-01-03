@@ -121,7 +121,6 @@ class MoveWorkState extends CreepState {
             // Let's ignore moveRet tired.
             if (moveRet == ERR_TIRED) {
                 creep.say("tired...");
-                moveRet = 0;
             }
 
         } else {
@@ -130,9 +129,10 @@ class MoveWorkState extends CreepState {
 
         creep.memory.move_status = moveRet;
 
-        if (moveRet != 0) {
+        if ((moveRet != 0) && (moveRet != ERR_TIRED)) {
             console.log(`${creep.name}: moveByPath() returned ${moveRet}`);
         }
+
 
         return moveRet;
     }
@@ -185,19 +185,41 @@ class MoveWorkState extends CreepState {
         if (!this.hasArrived(creep)) {
             // we still have to move. First lets check if our target is still
             // valid. Otherwise, let's pick up another one.
-            if (!this.isTargetValid(creep)) {
+            let isValid = this.isTargetValid(creep);
+            if (!isValid) {
                 this.setTargetAndPath(creep);
+            }
+
+            // Check if we are stuck. If we are, recompute the path.
+            if (isValid && creep.memory.lastPos) {
+                let sqdist = (
+                    Math.pow(creep.pos.x - creep.memory.lastPos.x, 2) +
+                    Math.pow(creep.pos.y - creep.memory.lastPos.y, 2)
+                );
+
+                if ((sqdist == 0) && (creep.memory.move_status == 0)) {
+                    // We are stuck! Recompute path and hope for the best.
+                    this.setTargetAndPath(creep);
+                }
             }
 
             let moveRet = this.move(creep);
 
-            if (moveRet != 0) {
+            if ((moveRet != 0) && (moveRet != ERR_TIRED)) {
                 console.log(
                     `${creep.name}: Move failed. Recomputing and trying again.`
                 );
                 this.setTargetAndPath(creep);
                 this.move(creep);
             }
+
+            // Update the creep lastPos so we know in the next tick if we are
+            // stuck
+            creep.memory.lastPos = {
+                x: creep.pos.x,
+                y: creep.pos.y,
+                roomName: creep.pos.roomName
+            };
         } else {
             // We are at the target location. Let's perform the work.
             let target = Game.getObjectById(creep.memory.target_id);
