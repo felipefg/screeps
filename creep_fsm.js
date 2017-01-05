@@ -278,7 +278,7 @@ class ReturningState extends MoveWorkState {
 
         if (creep.memory.target_id == null) {
             creep.memory.nextState = "idle";
-        } else if (creep.carry.energy < creep.carryCapacity) {
+        } else if (creep.carry.energy == 0) {
             creep.memory.nextState = "gathering";
         }
 
