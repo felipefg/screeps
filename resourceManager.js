@@ -28,7 +28,9 @@ var sourceManager = {
                 y: source.pos.y,
                 roomName: source.pos.roomName,
                 maxWorkers: slots,
-                workers: []
+                workers: [],
+                container: null,
+                miner: null,
             };
         });
 
@@ -43,7 +45,10 @@ var sourceManager = {
 
         var sources = _.filter(
             creep.room.memory.sources,
-            source => (source.workers.length < source.maxWorkers)
+            source => (
+                (!source.container) &&
+                (source.workers.length < source.maxWorkers)
+            )
         );
 
         return sources;
