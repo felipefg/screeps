@@ -83,6 +83,67 @@ var sourceManager = {
         }
         delete creep.memory.sourceId;
         delete creep.memory.sourceType;
+    },
+
+    /**
+     * Verify all source structures to see if they refer to creeps and
+     * structures that exists.
+     */
+    checkSources: function(room) {
+
+        if (!room.memory.sources) {
+            sourceManager.setupRoomSources(room);
+            return;
+        }
+
+        _.forEach(room.memory.sources, (source, sourceId) => {
+
+            // Look for non-existant workers, and remove them from the list
+            var invalidWorkers = source.workers.filter(
+                worker => Game.creeps[worker] === undefined
+            );
+
+            invalidWorkers.forEach(worker => {
+                console.log(
+                    `Source ${sourceId}: removing inexistent worker ${worker}`
+                );
+                let idx = source.workers.indexOf(worker);
+                if (idx > -1) {
+                    source.workers.splice(idx, 1);
+                }
+            });
+
+            // For the remainder workers, make sure their sourceId is set
+            source.workers.forEach(worker => {
+                if (Game.creeps[worker].memory.sourceId != sourceId) {
+                    console.log(
+                        `Source ${sourceId}: fixing backreference for worker `
+                        + worker
+                    );
+
+                    Game.creeps[worker].memory.sourceId = sourceId;
+                    Game.creeps[worker].memory.sourceType = 'source';
+                }
+            });
+
+            // If the source has a container, make sure it exists
+            if (source.container && (!Game.findObjectById(source.container))) {
+                console.log(
+                    `Source ${sourceId}: invalid container ${source.container}`
+                );
+                source.container = null;
+            }
+
+            // If the source has a miner, make sure it exists.
+            if (source.miner && (!Game.creeps[source.miner])) {
+                console.log(
+                    `Source ${sourceId}: invalid miner ${source.miner}`
+                );
+                source.miner = null;
+            }
+
+        });
+
     }
 }
 
